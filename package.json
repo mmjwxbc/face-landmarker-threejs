@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@huggingface/transformers": "latest",
     "@mediapipe/tasks-vision": "latest",
     "three": "latest"
   },
