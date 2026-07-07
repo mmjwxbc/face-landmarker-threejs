@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: ./apps/api
+    ports:
+      - "8000:8000"
+    volumes:
+      - gesturedeck-data:/data
+    environment:
+      - STORAGE_ROOT=/data/presentations
+
+  web:
+    build:
+      context: ./apps/web
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  gesturedeck-data:
