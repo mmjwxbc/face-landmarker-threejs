@@ -1,14 +1,16 @@
 # Face Landmarker + Three.js
 
-A browser-only demo that uses the webcam, MediaPipe Face Landmarker, and Three.js to render a real-time 3D face point cloud / wireframe.
+A browser-only demo that uses the webcam, MediaPipe Face Landmarker, and Three.js to render real-time face landmarks and a dense Kinect-style camera point cloud.
 
 ## Features
 
 - Runs directly in the browser.
 - Uses the webcam through `navigator.mediaDevices.getUserMedia()`.
-- Uses MediaPipe `FaceLandmarker` in `VIDEO` mode.
+- Uses MediaPipe `FaceLandmarker` in `VIDEO` mode for face landmarks.
 - Renders 478 face landmarks as Three.js points.
 - Renders semantic wireframe paths for face oval, eyes, brows, nose, and lips.
+- Includes a 3D face mode with exaggerated depth and scene rotation.
+- Includes a dense camera point cloud mode that samples the whole webcam frame into tens of thousands of Three.js particles.
 - Includes camera preview, FPS status, and visibility toggles.
 
 ## Run
@@ -27,6 +29,22 @@ http://localhost:5173
 Then allow camera permission.
 
 > Do not open the app from a plain LAN IP such as `http://192.168.x.x:5173` unless you have HTTPS configured. Browser camera access requires a secure context: localhost or HTTPS.
+
+## Modes
+
+### Face landmarks
+
+This mode uses MediaPipe Face Landmarker and renders the detected 478 face points in Three.js. It is accurate for facial structure, but it only covers the face.
+
+### 3D Face
+
+This mode uses the same landmarks, but exaggerates the z value and rotates the Three.js group so the face looks more three-dimensional.
+
+### Full Body Point Cloud
+
+This mode samples the whole webcam image into a dense Three.js particle field. It is designed to look closer to the classic Kinect point cloud demo.
+
+Important limitation: a normal webcam does not provide real depth. This mode uses RGB-derived pseudo depth for the visual effect. For physically accurate Kinect-style depth, use a real depth camera such as Kinect / RealSense, or add a browser-compatible monocular depth model.
 
 ## Troubleshooting
 
@@ -66,17 +84,25 @@ npm run preview
 
 ```text
 Webcam video frame
-  -> MediaPipe FaceLandmarker.detectForVideo(video, timestamp)
+  -> Face mode: MediaPipe FaceLandmarker.detectForVideo(video, timestamp)
   -> 478 normalized 3D face landmarks
   -> Three.js BufferGeometry positions
   -> Points + LineSegments render loop
 ```
 
-The `z` value is model-estimated relative depth, not a real Kinect-style depth measurement.
+```text
+Webcam video frame
+  -> Full Body Point Cloud mode: draw frame to a low-resolution canvas
+  -> sample every pixel into a Three.js point
+  -> map RGB/luma to color and pseudo z-depth
+  -> render a dense additive particle cloud
+```
+
+The Face Landmarker `z` value is model-estimated relative depth, not a real Kinect-style depth measurement.
 
 ## Main files
 
-- `src/main.js` - camera setup, model setup, landmark smoothing, Three.js rendering.
+- `src/main.js` - camera setup, model setup, landmark smoothing, dense point cloud sampling, Three.js rendering.
 - `src/style.css` - fullscreen camera and HUD layout.
 - `index.html` - app shell.
 
