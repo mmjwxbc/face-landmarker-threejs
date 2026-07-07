@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Face Landmarker + Three.js</title>
+  </head>
+  <body>
+    <video id="input-video" autoplay muted playsinline></video>
+    <canvas id="three-canvas"></canvas>
+
+    <main id="hud">
+      <h1>Face Landmarker + Three.js</h1>
+      <p id="status">Loading model...</p>
+      <div class="controls">
+        <button id="toggle-video" type="button">Hide Camera</button>
+        <button id="toggle-lines" type="button">Toggle Wireframe</button>
+        <button id="toggle-points" type="button">Toggle Points</button>
+      </div>
+      <p class="hint">Allow camera access. Move your face in front of the camera.</p>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
