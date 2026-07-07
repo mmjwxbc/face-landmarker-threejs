@@ -22,9 +22,16 @@ body {
   transform: scaleX(-1);
   opacity: 0.28;
   filter: saturate(0.85) contrast(1.1);
+  transition: opacity 180ms ease, filter 180ms ease;
 }
 
-#input-video.hidden {
+body.three-scene #input-video {
+  opacity: 0.05;
+  filter: saturate(0.4) contrast(1.25) blur(2px);
+}
+
+#input-video.hidden,
+body.three-scene #input-video.hidden {
   opacity: 0;
 }
 
@@ -35,11 +42,18 @@ body {
   height: 100vh;
 }
 
+body.three-scene #three-canvas {
+  background:
+    radial-gradient(circle at 50% 46%, rgba(66, 220, 255, 0.16), transparent 38%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.05), transparent 52%),
+    #030711;
+}
+
 #hud {
   position: fixed;
   top: 18px;
   left: 18px;
-  width: min(420px, calc(100vw - 36px));
+  width: min(460px, calc(100vw - 36px));
   padding: 16px 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
@@ -81,8 +95,10 @@ button {
   cursor: pointer;
 }
 
-button:hover {
-  background: rgba(255, 255, 255, 0.16);
+button:hover,
+button.active {
+  background: rgba(125, 235, 255, 0.18);
+  border-color: rgba(125, 235, 255, 0.42);
 }
 
 .hint {
