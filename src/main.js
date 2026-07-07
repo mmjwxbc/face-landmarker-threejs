@@ -150,7 +150,28 @@ function updateGeometry(landmarks) {
   lineGeometry.attributes.position.needsUpdate = true;
 }
 
+function getCameraApiErrorMessage() {
+  const origin = window.location.origin;
+  const protocol = window.location.protocol;
+  const host = window.location.hostname;
+
+  if (!window.isSecureContext) {
+    return `Camera API is blocked because this page is not a secure context. Current origin: ${origin}. Open the app with http://localhost:5173 or deploy it with HTTPS.`;
+  }
+
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    return `navigator.mediaDevices.getUserMedia is not available in this browser/context. Current protocol: ${protocol}, host: ${host}. Use a modern Chrome, Edge, Firefox, or Safari tab on localhost or HTTPS.`;
+  }
+
+  return null;
+}
+
 async function startCamera() {
+  const cameraApiError = getCameraApiErrorMessage();
+  if (cameraApiError) {
+    throw new Error(cameraApiError);
+  }
+
   const stream = await navigator.mediaDevices.getUserMedia({
     video: {
       width: { ideal: 1280 },
