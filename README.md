@@ -1,6 +1,6 @@
 # Face Landmarker + Three.js
 
-A browser-only demo that uses the webcam, MediaPipe Face Landmarker, and Three.js to render real-time face landmarks and a dense Kinect-style camera point cloud.
+A browser-only demo that uses the webcam, MediaPipe Face Landmarker, Depth Anything V2 Small, Transformers.js, and Three.js to render real-time face landmarks and a dense AI depth point cloud.
 
 ## Features
 
@@ -10,7 +10,9 @@ A browser-only demo that uses the webcam, MediaPipe Face Landmarker, and Three.j
 - Renders 478 face landmarks as Three.js points.
 - Renders semantic wireframe paths for face oval, eyes, brows, nose, and lips.
 - Includes a 3D face mode with exaggerated depth and scene rotation.
-- Includes a dense camera point cloud mode that samples the whole webcam frame into tens of thousands of Three.js particles.
+- Includes an AI depth point cloud mode that samples the whole webcam frame into tens of thousands of Three.js particles.
+- Uses `onnx-community/depth-anything-v2-small-ONNX` through `@huggingface/transformers` to estimate monocular depth in the browser.
+- Falls back to RGB pseudo depth if the depth model is still loading or cannot run in the current browser.
 - Includes camera preview, FPS status, and visibility toggles.
 
 ## Run
@@ -40,13 +42,23 @@ This mode uses MediaPipe Face Landmarker and renders the detected 478 face point
 
 This mode uses the same landmarks, but exaggerates the z value and rotates the Three.js group so the face looks more three-dimensional.
 
-### Full Body Point Cloud
+### AI Depth Point Cloud
 
-This mode samples the whole webcam image into a dense Three.js particle field. It is designed to look closer to the classic Kinect point cloud demo.
+This mode draws the webcam frame into a low-resolution canvas, runs a browser-side monocular depth estimation model, and maps each sampled pixel into a Three.js particle.
 
-Important limitation: a normal webcam does not provide real depth. This mode uses RGB-derived pseudo depth for the visual effect. For physically accurate Kinect-style depth, use a real depth camera such as Kinect / RealSense, or add a browser-compatible monocular depth model.
+The x/y position comes from the pixel coordinate, color comes from the original RGB frame, and z depth comes from Depth Anything V2 Small. While the model is loading, the demo uses a lightweight RGB/luma pseudo-depth fallback so the scene remains interactive.
+
+Important limitation: monocular depth is still estimated from one RGB camera. It is closer to a Kinect-style point cloud than pure RGB pseudo-depth, but it is not physically measured depth. For physically accurate depth, use a real depth camera such as Kinect / RealSense / LiDAR.
 
 ## Troubleshooting
+
+### First AI Depth load is slow
+
+The first click on `AI Depth Point Cloud` downloads and initializes the ONNX depth model. This can take a while depending on your network and device. After the browser cache is warm, it should start faster.
+
+### Browser or GPU is unsupported
+
+The app tries WebGPU first when available, then falls back to WASM, then falls back to RGB pseudo-depth if the model cannot run.
 
 ### `Cannot read properties of undefined (reading 'getUserMedia')`
 
@@ -92,20 +104,23 @@ Webcam video frame
 
 ```text
 Webcam video frame
-  -> Full Body Point Cloud mode: draw frame to a low-resolution canvas
+  -> AI Depth mode: draw frame to low-resolution canvas
+  -> Transformers.js depth-estimation pipeline
+  -> Depth Anything V2 Small ONNX model
+  -> normalized depth map
   -> sample every pixel into a Three.js point
-  -> map RGB/luma to color and pseudo z-depth
+  -> RGB controls color, depth map controls z
   -> render a dense additive particle cloud
 ```
 
-The Face Landmarker `z` value is model-estimated relative depth, not a real Kinect-style depth measurement.
+The Face Landmarker `z` value is model-estimated relative depth, not a real Kinect-style depth measurement. The AI depth mode uses monocular estimated depth, not sensor-measured depth.
 
 ## Main files
 
-- `src/main.js` - camera setup, model setup, landmark smoothing, dense point cloud sampling, Three.js rendering.
+- `src/main.js` - camera setup, model setup, landmark smoothing, AI depth estimation, dense point cloud sampling, Three.js rendering.
 - `src/style.css` - fullscreen camera and HUD layout.
 - `index.html` - app shell.
 
 ## Notes
 
-The demo loads the Face Landmarker model from Google Cloud Storage and the MediaPipe WASM runtime from jsDelivr. For production, download the `.task` model and host it from your own domain/CDN.
+The demo loads the Face Landmarker model from Google Cloud Storage, MediaPipe WASM runtime from jsDelivr, and the Depth Anything V2 Small ONNX model from Hugging Face. For production, host the model assets from your own domain/CDN.
