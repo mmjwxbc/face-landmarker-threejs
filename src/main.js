@@ -8,6 +8,7 @@ const statusEl = document.querySelector("#status");
 const toggleVideoBtn = document.querySelector("#toggle-video");
 const toggleLinesBtn = document.querySelector("#toggle-lines");
 const togglePointsBtn = document.querySelector("#toggle-points");
+const toggleSceneBtn = document.querySelector("#toggle-3d");
 
 const FACE_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
@@ -39,6 +40,7 @@ let faceLandmarker;
 let lastVideoTime = -1;
 let isPointsVisible = true;
 let isLinesVisible = true;
+let isThreeSceneMode = false;
 let smoothedLandmarks = null;
 let frameCount = 0;
 let lastFpsTime = performance.now();
@@ -51,6 +53,7 @@ camera.position.set(0, 0, 2.35);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x000000, 0);
 
 const group = new THREE.Group();
 scene.add(group);
@@ -60,11 +63,13 @@ const pointGeometry = new THREE.BufferGeometry();
 pointGeometry.setAttribute("position", new THREE.BufferAttribute(pointPositions, 3));
 
 const pointMaterial = new THREE.PointsMaterial({
+  color: 0x7deaff,
   size: 0.012,
   sizeAttenuation: true,
   transparent: true,
   opacity: 0.9,
-  depthWrite: false
+  depthWrite: false,
+  blending: THREE.AdditiveBlending
 });
 
 const points = new THREE.Points(pointGeometry, pointMaterial);
@@ -76,13 +81,38 @@ const lineGeometry = new THREE.BufferGeometry();
 lineGeometry.setAttribute("position", new THREE.BufferAttribute(linePositions, 3));
 
 const lineMaterial = new THREE.LineBasicMaterial({
+  color: 0xffffff,
   transparent: true,
   opacity: 0.82,
-  depthWrite: false
+  depthWrite: false,
+  blending: THREE.AdditiveBlending
 });
 
 const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
 group.add(lines);
+
+const grid = new THREE.GridHelper(3.8, 18, 0x7deaff, 0x214b68);
+grid.rotation.x = Math.PI / 2;
+grid.position.z = -0.85;
+grid.visible = false;
+grid.material.transparent = true;
+grid.material.opacity = 0.16;
+scene.add(grid);
+
+const scanRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.16, 1.36, 128),
+  new THREE.MeshBasicMaterial({
+    color: 0x7deaff,
+    transparent: true,
+    opacity: 0,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  })
+);
+scanRing.position.z = -0.9;
+scanRing.visible = false;
+scene.add(scanRing);
 
 const light = new THREE.AmbientLight(0xffffff, 1.0);
 scene.add(light);
@@ -99,11 +129,14 @@ function buildLinePairs(paths) {
 
 function normalizedToScenePoint(landmark) {
   // Landmarker x/y are normalized image coordinates. Mirror x so the 3D overlay
-  // matches the mirrored front camera preview.
+  // matches the mirrored front camera preview. 3D Scene mode exaggerates z depth
+  // so the point cloud is visibly three-dimensional instead of a flat overlay.
   const aspect = window.innerWidth / window.innerHeight;
-  const x = (0.5 - landmark.x) * aspect * 2.15;
-  const y = -(landmark.y - 0.5) * 2.15;
-  const z = -landmark.z * 1.7;
+  const xyScale = isThreeSceneMode ? 1.9 : 2.15;
+  const zScale = isThreeSceneMode ? 5.8 : 1.7;
+  const x = (0.5 - landmark.x) * aspect * xyScale;
+  const y = -(landmark.y - 0.5) * xyScale;
+  const z = -landmark.z * zScale;
   return [x, y, z];
 }
 
@@ -148,6 +181,38 @@ function updateGeometry(landmarks) {
 
   pointGeometry.attributes.position.needsUpdate = true;
   lineGeometry.attributes.position.needsUpdate = true;
+}
+
+function animateThreeScene(now) {
+  if (isThreeSceneMode) {
+    renderer.setClearColor(0x030711, 0.94);
+    group.rotation.x = -0.12 + Math.sin(now * 0.00045) * 0.08;
+    group.rotation.y = Math.sin(now * 0.0007) * 0.42;
+    group.rotation.z = Math.sin(now * 0.00035) * 0.035;
+    group.scale.setScalar(1.18);
+
+    grid.visible = true;
+    scanRing.visible = true;
+    scanRing.rotation.z = now * 0.00015;
+    scanRing.material.opacity = 0.18;
+
+    pointMaterial.size = 0.018;
+    pointMaterial.opacity = 1.0;
+    lineMaterial.opacity = 0.7;
+    return;
+  }
+
+  renderer.setClearColor(0x000000, 0);
+  group.rotation.set(0, 0, 0);
+  group.scale.setScalar(1);
+
+  grid.visible = false;
+  scanRing.visible = false;
+  scanRing.material.opacity = 0;
+
+  pointMaterial.size = 0.012;
+  pointMaterial.opacity = 0.9;
+  lineMaterial.opacity = 0.82;
 }
 
 function getCameraApiErrorMessage() {
@@ -209,15 +274,18 @@ function updateFps() {
 
   if (elapsed > 800) {
     const fps = Math.round((frameCount * 1000) / elapsed);
-    statusEl.textContent = `Tracking face landmarks - ${fps} FPS`;
+    const mode = isThreeSceneMode ? "3D point cloud" : "camera overlay";
+    statusEl.textContent = `Tracking face landmarks - ${fps} FPS - ${mode}`;
     frameCount = 0;
     lastFpsTime = now;
   }
 }
 
 function renderLoop() {
+  const now = performance.now();
+
   if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime !== lastVideoTime) {
-    const result = faceLandmarker.detectForVideo(video, performance.now());
+    const result = faceLandmarker.detectForVideo(video, now);
     const landmarks = result.faceLandmarks?.[0];
 
     if (landmarks) {
@@ -230,6 +298,7 @@ function renderLoop() {
     lastVideoTime = video.currentTime;
   }
 
+  animateThreeScene(now);
   points.visible = isPointsVisible;
   lines.visible = isLinesVisible;
   renderer.render(scene, camera);
@@ -250,11 +319,24 @@ function bindControls() {
 
   toggleLinesBtn.addEventListener("click", () => {
     isLinesVisible = !isLinesVisible;
+    toggleLinesBtn.classList.toggle("active", isLinesVisible);
   });
 
   togglePointsBtn.addEventListener("click", () => {
     isPointsVisible = !isPointsVisible;
+    togglePointsBtn.classList.toggle("active", isPointsVisible);
   });
+
+  toggleSceneBtn.addEventListener("click", () => {
+    isThreeSceneMode = !isThreeSceneMode;
+    document.body.classList.toggle("three-scene", isThreeSceneMode);
+    toggleSceneBtn.classList.toggle("active", isThreeSceneMode);
+    toggleSceneBtn.textContent = isThreeSceneMode ? "Overlay Mode" : "3D Scene";
+    statusEl.textContent = isThreeSceneMode ? "3D point cloud mode enabled" : "Camera overlay mode enabled";
+  });
+
+  toggleLinesBtn.classList.toggle("active", isLinesVisible);
+  togglePointsBtn.classList.toggle("active", isPointsVisible);
 
   window.addEventListener("resize", resize);
 }
