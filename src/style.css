@@ -25,13 +25,16 @@ body {
   transition: opacity 180ms ease, filter 180ms ease;
 }
 
+#input-video.cloud-mode {
+  opacity: 0;
+}
+
 body.three-scene #input-video {
   opacity: 0.05;
   filter: saturate(0.4) contrast(1.25) blur(2px);
 }
 
-#input-video.hidden,
-body.three-scene #input-video.hidden {
+#input-video.hidden {
   opacity: 0;
 }
 
@@ -40,6 +43,10 @@ body.three-scene #input-video.hidden {
   inset: 0;
   width: 100vw;
   height: 100vh;
+}
+
+#three-canvas.cloud-mode {
+  background: #000000;
 }
 
 body.three-scene #three-canvas {
@@ -53,7 +60,7 @@ body.three-scene #three-canvas {
   position: fixed;
   top: 18px;
   left: 18px;
-  width: min(460px, calc(100vw - 36px));
+  width: min(560px, calc(100vw - 36px));
   padding: 16px 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
