@@ -9,44 +9,41 @@ const toggleVideoBtn = document.querySelector("#toggle-video");
 const toggleLinesBtn = document.querySelector("#toggle-lines");
 const togglePointsBtn = document.querySelector("#toggle-points");
 const toggleSceneBtn = document.querySelector("#toggle-3d");
+const toggleCloudBtn = document.querySelector("#toggle-full-body");
 
 const FACE_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
-
-// MediaPipe Face Landmarker currently returns 478 landmarks per detected face.
 const LANDMARK_COUNT = 478;
 
-// Lightweight semantic wireframe groups. These are stable landmark paths that make
-// the face read clearly without needing the full triangulation list.
+const CLOUD_WIDTH = 220;
+const CLOUD_HEIGHT = 124;
+const CLOUD_COUNT = CLOUD_WIDTH * CLOUD_HEIGHT;
+
 const WIRE_PATHS = [
-  // Face oval
   [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10],
-  // Lips outer and inner
   [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 61],
   [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95, 78],
-  // Nose bridge and bottom
   [168, 6, 197, 195, 5, 4, 1, 19, 94, 2, 164],
   [98, 97, 2, 326, 327],
-  // Left eye and eyebrow
   [33, 7, 163, 144, 145, 153, 154, 155, 133, 246, 161, 160, 159, 158, 157, 173, 33],
   [70, 63, 105, 66, 107, 55, 65, 52, 53, 46],
-  // Right eye and eyebrow
   [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398, 362],
   [336, 296, 334, 293, 300, 276, 283, 282, 295, 285]
 ];
 
 let faceLandmarker;
 let lastVideoTime = -1;
+let lastCloudVideoTime = -1;
 let isPointsVisible = true;
 let isLinesVisible = true;
 let isThreeSceneMode = false;
+let isCloudMode = false;
 let smoothedLandmarks = null;
 let frameCount = 0;
 let lastFpsTime = performance.now();
 
 const scene = new THREE.Scene();
-
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
 camera.position.set(0, 0, 2.35);
 
@@ -55,8 +52,8 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 0);
 
-const group = new THREE.Group();
-scene.add(group);
+const faceGroup = new THREE.Group();
+scene.add(faceGroup);
 
 const pointPositions = new Float32Array(LANDMARK_COUNT * 3);
 const pointGeometry = new THREE.BufferGeometry();
@@ -73,7 +70,7 @@ const pointMaterial = new THREE.PointsMaterial({
 });
 
 const points = new THREE.Points(pointGeometry, pointMaterial);
-group.add(points);
+faceGroup.add(points);
 
 const linePairs = buildLinePairs(WIRE_PATHS);
 const linePositions = new Float32Array(linePairs.length * 2 * 3);
@@ -89,18 +86,52 @@ const lineMaterial = new THREE.LineBasicMaterial({
 });
 
 const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
-group.add(lines);
+faceGroup.add(lines);
 
-const grid = new THREE.GridHelper(3.8, 18, 0x7deaff, 0x214b68);
+const cloudGroup = new THREE.Group();
+cloudGroup.visible = false;
+scene.add(cloudGroup);
+
+const cloudPositions = new Float32Array(CLOUD_COUNT * 3);
+const cloudColors = new Float32Array(CLOUD_COUNT * 3);
+const cloudNoise = new Float32Array(CLOUD_COUNT);
+for (let i = 0; i < CLOUD_COUNT; i++) {
+  const s = Math.sin(i * 12.9898) * 43758.5453;
+  cloudNoise[i] = s - Math.floor(s);
+}
+
+const cloudGeometry = new THREE.BufferGeometry();
+cloudGeometry.setAttribute("position", new THREE.BufferAttribute(cloudPositions, 3));
+cloudGeometry.setAttribute("color", new THREE.BufferAttribute(cloudColors, 3));
+
+const cloudMaterial = new THREE.PointsMaterial({
+  size: 0.012,
+  sizeAttenuation: true,
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.96,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending
+});
+
+const cloudPoints = new THREE.Points(cloudGeometry, cloudMaterial);
+cloudGroup.add(cloudPoints);
+
+const cloudCanvas = document.createElement("canvas");
+cloudCanvas.width = CLOUD_WIDTH;
+cloudCanvas.height = CLOUD_HEIGHT;
+const cloudCtx = cloudCanvas.getContext("2d", { willReadFrequently: true });
+
+const grid = new THREE.GridHelper(4.8, 22, 0x7deaff, 0x214b68);
 grid.rotation.x = Math.PI / 2;
-grid.position.z = -0.85;
+grid.position.z = -1.15;
 grid.visible = false;
 grid.material.transparent = true;
-grid.material.opacity = 0.16;
+grid.material.opacity = 0.14;
 scene.add(grid);
 
 const scanRing = new THREE.Mesh(
-  new THREE.RingGeometry(0.16, 1.36, 128),
+  new THREE.RingGeometry(0.18, 1.55, 128),
   new THREE.MeshBasicMaterial({
     color: 0x7deaff,
     transparent: true,
@@ -114,8 +145,7 @@ scanRing.position.z = -0.9;
 scanRing.visible = false;
 scene.add(scanRing);
 
-const light = new THREE.AmbientLight(0xffffff, 1.0);
-scene.add(light);
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 
 function buildLinePairs(paths) {
   const pairs = [];
@@ -128,9 +158,6 @@ function buildLinePairs(paths) {
 }
 
 function normalizedToScenePoint(landmark) {
-  // Landmarker x/y are normalized image coordinates. Mirror x so the 3D overlay
-  // matches the mirrored front camera preview. 3D Scene mode exaggerates z depth
-  // so the point cloud is visibly three-dimensional instead of a flat overlay.
   const aspect = window.innerWidth / window.innerHeight;
   const xyScale = isThreeSceneMode ? 1.9 : 2.15;
   const zScale = isThreeSceneMode ? 5.8 : 1.7;
@@ -155,7 +182,7 @@ function smoothLandmarks(landmarks, alpha = 0.55) {
   return smoothedLandmarks;
 }
 
-function updateGeometry(landmarks) {
+function updateFaceGeometry(landmarks) {
   const stable = smoothLandmarks(landmarks);
 
   for (let i = 0; i < LANDMARK_COUNT; i++) {
@@ -183,19 +210,61 @@ function updateGeometry(landmarks) {
   lineGeometry.attributes.position.needsUpdate = true;
 }
 
-function animateThreeScene(now) {
+function updateCameraCloud() {
+  cloudCtx.save();
+  cloudCtx.scale(-1, 1);
+  cloudCtx.drawImage(video, -CLOUD_WIDTH, 0, CLOUD_WIDTH, CLOUD_HEIGHT);
+  cloudCtx.restore();
+
+  const pixels = cloudCtx.getImageData(0, 0, CLOUD_WIDTH, CLOUD_HEIGHT).data;
+  const aspect = window.innerWidth / window.innerHeight;
+  let pointIndex = 0;
+
+  for (let y = 0; y < CLOUD_HEIGHT; y++) {
+    const v = y / (CLOUD_HEIGHT - 1);
+    for (let x = 0; x < CLOUD_WIDTH; x++) {
+      const u = x / (CLOUD_WIDTH - 1);
+      const pixelIndex = (y * CLOUD_WIDTH + x) * 4;
+      const r = pixels[pixelIndex + 0] / 255;
+      const g = pixels[pixelIndex + 1] / 255;
+      const b = pixels[pixelIndex + 2] / 255;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      const sat = max - min;
+      const edgeFalloff = 1 - Math.min(1, Math.hypot(u - 0.5, (v - 0.5) * 1.25) * 1.25);
+      const shimmer = cloudNoise[pointIndex] - 0.5;
+      const visibility = Math.min(1, Math.max(0.08, luma * 1.4 + sat * 0.55));
+
+      cloudPositions[pointIndex * 3 + 0] = (u - 0.5) * aspect * 3.75;
+      cloudPositions[pointIndex * 3 + 1] = -(v - 0.5) * 2.18;
+      cloudPositions[pointIndex * 3 + 2] = (0.5 - luma) * 1.05 + edgeFalloff * 0.42 + shimmer * 0.08;
+
+      cloudColors[pointIndex * 3 + 0] = 0.02 * visibility + sat * 0.04;
+      cloudColors[pointIndex * 3 + 1] = (0.22 + luma * 0.42 + edgeFalloff * 0.22) * visibility;
+      cloudColors[pointIndex * 3 + 2] = (0.55 + luma * 0.75 + sat * 0.25) * visibility;
+
+      pointIndex += 1;
+    }
+  }
+
+  cloudGeometry.attributes.position.needsUpdate = true;
+  cloudGeometry.attributes.color.needsUpdate = true;
+}
+
+function animateFaceScene(now) {
   if (isThreeSceneMode) {
     renderer.setClearColor(0x030711, 0.94);
-    group.rotation.x = -0.12 + Math.sin(now * 0.00045) * 0.08;
-    group.rotation.y = Math.sin(now * 0.0007) * 0.42;
-    group.rotation.z = Math.sin(now * 0.00035) * 0.035;
-    group.scale.setScalar(1.18);
+    faceGroup.rotation.x = -0.12 + Math.sin(now * 0.00045) * 0.08;
+    faceGroup.rotation.y = Math.sin(now * 0.0007) * 0.42;
+    faceGroup.rotation.z = Math.sin(now * 0.00035) * 0.035;
+    faceGroup.scale.setScalar(1.18);
+    camera.position.z += (2.35 - camera.position.z) * 0.08;
 
     grid.visible = true;
     scanRing.visible = true;
     scanRing.rotation.z = now * 0.00015;
     scanRing.material.opacity = 0.18;
-
     pointMaterial.size = 0.018;
     pointMaterial.opacity = 1.0;
     lineMaterial.opacity = 0.7;
@@ -203,16 +272,32 @@ function animateThreeScene(now) {
   }
 
   renderer.setClearColor(0x000000, 0);
-  group.rotation.set(0, 0, 0);
-  group.scale.setScalar(1);
-
+  faceGroup.rotation.set(0, 0, 0);
+  faceGroup.scale.setScalar(1);
+  camera.position.z += (2.35 - camera.position.z) * 0.08;
   grid.visible = false;
   scanRing.visible = false;
   scanRing.material.opacity = 0;
-
   pointMaterial.size = 0.012;
   pointMaterial.opacity = 0.9;
   lineMaterial.opacity = 0.82;
+}
+
+function animateCloudScene(now) {
+  renderer.setClearColor(0x000000, 1);
+  camera.position.z += (3.0 - camera.position.z) * 0.08;
+  cloudGroup.rotation.x = -0.08 + Math.sin(now * 0.00025) * 0.05;
+  cloudGroup.rotation.y = Math.sin(now * 0.00042) * 0.34;
+  cloudGroup.rotation.z = Math.sin(now * 0.00018) * 0.025;
+  cloudGroup.scale.setScalar(1.35);
+  cloudMaterial.size = 0.01 + Math.sin(now * 0.001) * 0.0015;
+
+  grid.visible = true;
+  grid.position.z = -1.35;
+  scanRing.visible = true;
+  scanRing.scale.setScalar(1.35 + Math.sin(now * 0.0012) * 0.08);
+  scanRing.rotation.z = now * 0.00025;
+  scanRing.material.opacity = 0.11;
 }
 
 function getCameraApiErrorMessage() {
@@ -267,15 +352,14 @@ async function createFaceLandmarker() {
   });
 }
 
-function updateFps() {
+function updateFps(mode) {
   frameCount += 1;
   const now = performance.now();
   const elapsed = now - lastFpsTime;
 
   if (elapsed > 800) {
     const fps = Math.round((frameCount * 1000) / elapsed);
-    const mode = isThreeSceneMode ? "3D point cloud" : "camera overlay";
-    statusEl.textContent = `Tracking face landmarks - ${fps} FPS - ${mode}`;
+    statusEl.textContent = `Tracking - ${fps} FPS - ${mode}`;
     frameCount = 0;
     lastFpsTime = now;
   }
@@ -284,23 +368,35 @@ function updateFps() {
 function renderLoop() {
   const now = performance.now();
 
-  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime !== lastVideoTime) {
-    const result = faceLandmarker.detectForVideo(video, now);
-    const landmarks = result.faceLandmarks?.[0];
-
-    if (landmarks) {
-      updateGeometry(landmarks);
-      updateFps();
-    } else {
-      statusEl.textContent = "No face detected";
+  if (isCloudMode) {
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime !== lastCloudVideoTime) {
+      updateCameraCloud();
+      updateFps("dense camera point cloud");
+      lastCloudVideoTime = video.currentTime;
     }
+    animateCloudScene(now);
+  } else {
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime !== lastVideoTime) {
+      const result = faceLandmarker.detectForVideo(video, now);
+      const landmarks = result.faceLandmarks?.[0];
 
-    lastVideoTime = video.currentTime;
+      if (landmarks) {
+        updateFaceGeometry(landmarks);
+        updateFps(isThreeSceneMode ? "3D face landmarks" : "camera-aligned face landmarks");
+      } else {
+        statusEl.textContent = "No face detected";
+      }
+
+      lastVideoTime = video.currentTime;
+    }
+    animateFaceScene(now);
   }
 
-  animateThreeScene(now);
-  points.visible = isPointsVisible;
-  lines.visible = isLinesVisible;
+  faceGroup.visible = !isCloudMode;
+  cloudGroup.visible = isCloudMode;
+  points.visible = !isCloudMode && isPointsVisible;
+  lines.visible = !isCloudMode && isLinesVisible;
+
   renderer.render(scene, camera);
   requestAnimationFrame(renderLoop);
 }
@@ -309,6 +405,24 @@ function resize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function setThreeSceneMode(enabled) {
+  isThreeSceneMode = enabled;
+  document.body.classList.toggle("three-scene", isThreeSceneMode);
+  toggleSceneBtn.classList.toggle("active", isThreeSceneMode);
+  toggleSceneBtn.textContent = isThreeSceneMode ? "Overlay Face" : "3D Face";
+}
+
+function setCloudMode(enabled) {
+  isCloudMode = enabled;
+  if (enabled) {
+    setThreeSceneMode(false);
+  }
+  document.body.classList.toggle("cloud-scene", isCloudMode);
+  toggleCloudBtn.classList.toggle("active", isCloudMode);
+  toggleCloudBtn.textContent = isCloudMode ? "Face Mode" : "Full Body Point Cloud";
+  statusEl.textContent = isCloudMode ? "Dense camera point cloud mode enabled" : "Face landmark mode enabled";
 }
 
 function bindControls() {
@@ -328,16 +442,18 @@ function bindControls() {
   });
 
   toggleSceneBtn.addEventListener("click", () => {
-    isThreeSceneMode = !isThreeSceneMode;
-    document.body.classList.toggle("three-scene", isThreeSceneMode);
-    toggleSceneBtn.classList.toggle("active", isThreeSceneMode);
-    toggleSceneBtn.textContent = isThreeSceneMode ? "Overlay Mode" : "3D Scene";
-    statusEl.textContent = isThreeSceneMode ? "3D point cloud mode enabled" : "Camera overlay mode enabled";
+    if (isCloudMode) {
+      setCloudMode(false);
+    }
+    setThreeSceneMode(!isThreeSceneMode);
+  });
+
+  toggleCloudBtn.addEventListener("click", () => {
+    setCloudMode(!isCloudMode);
   });
 
   toggleLinesBtn.classList.toggle("active", isLinesVisible);
   togglePointsBtn.classList.toggle("active", isPointsVisible);
-
   window.addEventListener("resize", resize);
 }
 
