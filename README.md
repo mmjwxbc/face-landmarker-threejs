@@ -18,9 +18,42 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite, then allow camera permission.
+Open the Local URL printed by Vite, usually:
 
-> Camera access usually requires `localhost` or HTTPS.
+```text
+http://localhost:5173
+```
+
+Then allow camera permission.
+
+> Do not open the app from a plain LAN IP such as `http://192.168.x.x:5173` unless you have HTTPS configured. Browser camera access requires a secure context: localhost or HTTPS.
+
+## Troubleshooting
+
+### `Cannot read properties of undefined (reading 'getUserMedia')`
+
+This means the browser did not expose `navigator.mediaDevices.getUserMedia` to the page.
+
+Most common causes:
+
+- You opened a non-secure URL, such as a plain HTTP LAN IP.
+- You opened the built files directly instead of using a local dev server.
+- You are inside an embedded browser or WebView that blocks camera APIs.
+- The browser is too old or camera permission is blocked.
+
+Fix:
+
+```bash
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
+
+For testing from another device, deploy the app with HTTPS, or use a secure tunnel such as Cloudflare Tunnel, ngrok, or a real HTTPS domain.
 
 ## Build
 
